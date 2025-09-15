@@ -1,0 +1,12 @@
+- [x] Add language selector UI in AIChatbot header
+- [x] Update initialMessages to include welcome message from assistant
+- [x] Create custom fetcher function that includes language in request body
+- [x] Pass custom fetcher to useChat
+- [x] Remove system prompt from initialMessages (handled in API)
+- [x] Implement global fetch override for language header
+- [x] Create LanguageProvider with global fetch override
+- [x] Update layout.tsx to include LanguageProvider
+- [x] Modify AIChatbot to use language context and remove custom fetcher
+- [x] Test the chat functionality with global fetch override
+- [x] Add clear previous AI messages feature to avoid confusion
+- [x] Add history feature for past searches
