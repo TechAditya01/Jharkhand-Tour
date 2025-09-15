@@ -42,7 +42,7 @@ export function AIChatbot() {
 
   const clearMessages = () => {
     // Save current conversation to history if there are messages beyond welcome
-    if (messages.length > 1) {
+    if (typeof window !== "undefined" && messages.length > 1) {
       const history = JSON.parse(localStorage.getItem('chatHistory') || '[]')
       const conversation = messages.filter(m => m.id !== 'welcome')
       if (conversation.length > 0) {
@@ -205,7 +205,14 @@ export function AIChatbot() {
     setShowHistory(false)
   }
 
-  const history = JSON.parse(localStorage.getItem('chatHistory') || '[]')
+  const [history, setHistory] = useState<any[]>([])
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const storedHistory = JSON.parse(localStorage.getItem('chatHistory') || '[]')
+      setHistory(storedHistory)
+    }
+  }, [])
 
   return (
     <>
