@@ -1,11 +1,16 @@
 "use client"
 
 import { useState } from "react"
+import { usePopup } from "@/components/ui/PopupContext"
+import { useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { ShoppingBag, Home, Leaf, Shield, Star, MapPin, Calendar, Users, Verified, Search, Filter } from "lucide-react"
+import { ShoppingBag, Home, Leaf, Shield, Star, MapPin, Calendar, Users, Verified, Search, Filter, Wallet } from "lucide-react"
+import { connectWallet, purchaseItem, mintTourismNFT } from "@/lib/blockchain"
+import { createTourismItemMetadata } from "@/lib/ipfs"
+import { TransactionHistory, TransactionRecord, TransactionStatus } from "./transaction-history"
 
 interface MarketplaceItem {
   id: string
@@ -22,6 +27,7 @@ interface MarketplaceItem {
     name: string
     verified: boolean
     rating: number
+    address: string
   }
   image: string
   description: string
@@ -45,6 +51,7 @@ const marketplaceItems: MarketplaceItem[] = [
       name: "Sita Devi Artisan Collective",
       verified: true,
       rating: 4.9,
+      address: "0x0000000000000000000000000000000000000000",
     },
     image: "/jharkhand%20saree.jpeg",
     description: "Authentic handwoven saree with traditional tribal patterns, made by local artisans",
@@ -64,6 +71,7 @@ const marketplaceItems: MarketplaceItem[] = [
       name: "Ramesh Kumar",
       verified: true,
       rating: 4.7,
+      address: "0x0000000000000000000000000000000000000000",
     },
     image: "/bamboo homestay.jpeg",
     description: "Sustainable bamboo homestay in the heart of nature",
@@ -85,6 +93,7 @@ const marketplaceItems: MarketplaceItem[] = [
       name: "Jharkhand Eco Tours",
       verified: true,
       rating: 4.8,
+      address: "0x0000000000000000000000000000000000000000",
     },
     image: "/tribal village.jpeg",
     description: "Immersive cultural experience with traditional dance, music, and local cuisine",
@@ -104,6 +113,7 @@ const marketplaceItems: MarketplaceItem[] = [
       name: "Traditional Arts Center",
       verified: true,
       rating: 4.6,
+      address: "0x0000000000000000000000000000000000000000",
     },
     image: "/dhokra.jpeg",
     description: "Learn the ancient art of Dokra metal casting from master craftsmen",
@@ -123,6 +133,7 @@ const marketplaceItems: MarketplaceItem[] = [
       name: "Munda Craft Collective",
       verified: true,
       rating: 4.8,
+      address: "0x0000000000000000000000000000000000000000",
     },
     image: "/tribel jewelley.jpeg",
     description: "Authentic tribal jewelry with silver and traditional beadwork",
@@ -142,6 +153,7 @@ const marketplaceItems: MarketplaceItem[] = [
       name: "Wildlife Retreat",
       verified: true,
       rating: 4.9,
+      address: "0x0000000000000000000000000000000000000000",
     },
     image: "/forest canopey.jpeg",
     description: "Unique treehouse experience with wildlife viewing opportunities",
@@ -162,6 +174,20 @@ export function Marketplace() {
   const [selectedCategory, setSelectedCategory] = useState("all")
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedItem, setSelectedItem] = useState<MarketplaceItem | null>(null)
+  const [isWalletConnected, setIsWalletConnected] = useState(false)
+  const [walletAddress, setWalletAddress] = useState("")
+
+  const [transactions, setTransactions] = useState<TransactionRecord[]>([])
+
+  // New state for transaction history
+  const [transactionHistory, setTransactionHistory] = useState<
+    { id: string; itemTitle: string; status: "pending" | "success" | "failed"; hash?: string; error?: string }[]
+  >([])
+
+  // Helper to add transaction to history
+  const addTransaction = (tx: { id: string; itemTitle: string; status: "pending" | "success" | "failed"; hash?: string; error?: string }) => {
+    setTransactionHistory((prev) => [tx, ...prev])
+  }
 
   const filteredItems = marketplaceItems.filter((item) => {
     const matchesCategory = selectedCategory === "all" || item.category === selectedCategory
@@ -171,11 +197,72 @@ export function Marketplace() {
     return matchesCategory && matchesSearch
   })
 
-  const handlePurchase = (item: MarketplaceItem) => {
-    // Simulate blockchain transaction
-    alert(
-      `Initiating secure blockchain transaction for ${item.title}\nBlockchain ID: ${item.blockchainId}\nAmount: ₹${item.price}`,
-    )
+  const { showPopup } = usePopup()
+
+  const handleConnectWallet = async () => {
+    try {
+      console.log("Connecting wallet...")
+      const signer = await connectWallet()
+      const address = await signer.getAddress()
+      console.log("Wallet connected:", address)
+      setWalletAddress(address)
+      setIsWalletConnected(true)
+    } catch (error) {
+      console.error("Failed to connect wallet:", error)
+      showPopup("Failed to connect wallet", (error as Error).message)
+    }
+  }
+
+  const addTransactionRecord = (tx: Omit<TransactionRecord, 'txHash' | 'timestamp'> & Partial<Pick<TransactionRecord, 'txHash' | 'timestamp'>>) => {
+    const fullTx: TransactionRecord = {
+      ...tx,
+      txHash: tx.txHash || '',
+      timestamp: tx.timestamp || Date.now(),
+    }
+    setTransactions((prev) => [fullTx, ...prev])
+  }
+
+  const clearTransactions = () => {
+    setTransactions([])
+  }
+
+  const handlePurchase = async (item: MarketplaceItem) => {
+    console.log("handlePurchase called for item:", item.title)
+    if (!isWalletConnected) {
+      console.log("Wallet not connected, showing popup")
+      showPopup("Wallet not connected", "Please connect your wallet first")
+      return
+    }
+    try {
+      // Add pending transaction to history
+      const txId = Date.now().toString()
+      addTransactionRecord({ id: txId, itemTitle: item.title, status: "pending" })
+
+      // Perform real blockchain purchase transaction
+      const listingId = parseInt(item.blockchainId, 16) // Assuming blockchainId is hex string of listingId
+      const tx = await purchaseItem(listingId, item.price.toString())
+
+      // Update transaction history to success with real tx hash
+      setTransactionHistory((prev) =>
+        prev.map((tx) => (tx.id === txId ? { ...tx, status: "success", hash: tx.hash } : tx))
+      )
+
+      showPopup("Transaction successful", `Transaction successful for ${item.title}! Hash: ${tx.hash}`)
+    } catch (error: any) {
+      console.error("Transaction failed:", error)
+      let errorMessage = error instanceof Error ? error.message : JSON.stringify(error, null, 2)
+
+      // Better error handling for insufficient funds
+      if (error?.code === -32000 || error?.message?.toLowerCase().includes("insufficient funds")) {
+        errorMessage = "Transaction failed due to insufficient funds in your wallet to cover gas fees. Please add funds and try again."
+      }
+
+      // Add failed transaction to history
+      const txId = Date.now().toString()
+      addTransactionRecord({ id: txId, itemTitle: item.title, status: "failed", errorMessage })
+
+      showPopup("Transaction failed", errorMessage)
+    }
   }
 
   return (
@@ -190,7 +277,20 @@ export function Marketplace() {
             <Shield className="h-5 w-5 text-emerald-600" />
             <span className="text-sm text-emerald-600 font-medium">Blockchain-secured transactions</span>
           </div>
+          <div className="flex justify-center mt-4">
+            {!isWalletConnected ? (
+              <Button onClick={handleConnectWallet} className="bg-blue-600 hover:bg-blue-700">
+                <Wallet className="h-4 w-4 mr-2" />
+                Connect Wallet
+              </Button>
+            ) : (
+              <div className="text-sm text-gray-600">
+                Connected: {walletAddress.slice(0,6)}...{walletAddress.slice(-4)}
+              </div>
+            )}
+          </div>
         </div>
+        <div id="toast-debug" className="fixed bottom-10 right-10 z-50"></div>
 
         {/* Search and Filter */}
         <div className="mb-8">
@@ -400,3 +500,5 @@ export function Marketplace() {
     </section>
   )
 }
+
+export default Marketplace
